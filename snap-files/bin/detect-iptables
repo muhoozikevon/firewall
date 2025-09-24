@@ -1,0 +1,84 @@
+#!/bin/sh
+set -e
+
+if [ -z "$SNAP" ]; then
+    echo "SNAP not set"
+    exit 1
+fi
+
+snapctl is-connected firewall-control || {
+    logger -t "$SNAP_NAME" "please run: snap connect $SNAP_NAME:firewall-control"
+    exit 1
+}
+
+detect() {
+    kernel_maj=$(uname -r | cut -d '.' -f 1)
+    req=$((kernel_maj + 0))
+
+    # iptables-nft claims 4.17, but heard reports that 5 is needed
+    if [ "$req" -lt 5 ]; then
+        echo legacy
+        return
+    fi
+
+    # If iptables_filter is not compiled in the kernel or auto-loading, this
+    # iptables call will output an error string that won't match the grep. If
+    # we don't have iptables_filter support, we can't claim to support legacy.
+    has_legacy=
+    for t in filter nat mangle raw ; do
+        iptables-legacy -S -t "$t" 2>&1 | grep -Eq '^-[ARIN] ' && {
+            has_legacy="yes"
+            break
+        }
+    done
+
+    # If iptables_filter is not compiled in the kernel or auto-loading, this
+    # iptables call will output an error string that won't match the grep. If
+    # we don't have iptables_filter support, we can't claim to support nft.
+    has_nft=
+    for t in filter nat mangle raw ; do
+        iptables-nft -S -t "$t" 2>&1 | grep -Eq '^-[ARIN] ' && {
+            has_nft="yes"
+            break
+        }
+    done
+
+    if [ -z "$has_nft" ] && [ -z "$has_legacy" ]; then
+        logger -t "$SNAP_NAME" "could not detect iptables backend; please check kernel configuration"
+        echo "unsupported"
+        return
+    fi
+
+    # if only legacy in use, then use it. Otherwise, prefer nft for:
+    # - neither in use
+    # - both in use
+    # - nft in use
+    if [ -z "$has_nft" ] && [ "$has_legacy" = "yes" ]; then
+        echo legacy
+        return
+    fi
+
+    echo nft
+}
+
+myuid=$(id -u)
+if [ "$myuid" != "0" ]; then
+    exit 1
+fi
+
+# if detection failed for any reason, fallback to legacy
+backend=$(detect) || backend="error"
+if [ "$backend" != "nft" ] && [ "$backend" != "legacy" ]; then
+    if [ "$backend" = "error" ]; then
+        logger -t "$SNAP_NAME" "error detecting iptables backend, falling back to legacy"
+    fi
+    backend="legacy"
+fi
+
+BINPATH="$SNAP_DATA/bin"
+if [ ! -d "$BINPATH" ]; then
+    mkdir -p "$BINPATH"
+fi
+for i in ip6tables ip6tables-restore ip6tables-save iptables iptables-restore iptables-save ; do
+    ln -sf /usr/sbin/xtables-"$backend"-multi "$BINPATH/$i"
+done

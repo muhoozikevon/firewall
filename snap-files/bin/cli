@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+if [ -z "$SNAP" ]; then
+    echo "SNAP not set"
+    exit 1
+fi
+
+snapctl is-connected firewall-control || {
+    echo "Please run 'sudo snap connect $SNAP_NAME:firewall-control'"
+    exit 1
+}
+
+"$SNAP"/usr/sbin/ufw --rootdir="$SNAP" --datadir="$SNAP_DATA" "$@"

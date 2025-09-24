@@ -1,0 +1,86 @@
+name: ufw
+version: 0.37+git
+summary: ufw (Uncomplicated Firewall)
+description: ufw as a snap
+license: GPL-3.0 AND GPL-2.0+
+confinement: strict
+#grade: stable
+#assumes:
+#- snapd2.45  # for *time64 syscalls
+grade: devel
+base: core20
+
+environment:
+  PATH: $SNAP_DATA/bin:$PATH
+  PYTHONPATH: $SNAP/usr/lib/python3/dist-packages
+
+apps:
+  srv:
+    command: bin/srv
+    daemon: oneshot
+    plugs: [ firewall-control ]
+  ufw:
+    command: bin/cli
+    completer: ufw.completer.bash
+    plugs: [ firewall-control ]
+  init:
+    command: bin/init
+    plugs: [ firewall-control ]
+  ipset:
+    command: sbin/ipset
+    plugs: [ firewall-control ]
+  conntrack:
+    command: usr/sbin/conntrack
+    plugs: [ firewall-control ]
+  doc:
+    command: bin/doc
+
+layout:
+  /usr/lib/python3/dist-packages/ufw/__pycache__:
+    symlink: $SNAP_DATA/usr/lib/python3/dist-packages/ufw/__pycache__
+
+parts:
+  wrapper:
+    plugin: dump
+    source: snap-files/
+  stager:
+    plugin: nil
+    stage-packages:
+    - conntrack
+    - ipset
+    stage:
+    - -lib/*/*
+    - -sbin/ip*tables*
+    - -sbin/xtables-multi
+    - -usr/bin/iptables-xml
+    - -usr/sbin/ip*tables*
+    - -usr/sbin/nfnl_osf
+    - -usr/lib/*/*
+    - -usr/share/doc-base
+    - -usr/share/doc
+    - -usr/share/iptables
+    - -usr/share/man
+    - -usr/share/lintian
+  stage-libipset:
+    plugin: nil
+    stage-packages:
+    - libipset13
+    stage:
+    - -usr/share/doc
+    - -usr/share/man
+  make-project:
+    plugin: make
+    source: .
+    make-parameters:
+    - SNAP=yes
+    build-packages:
+    - iptables
+    - netbase
+    - procps
+    - sed
+    - bsdmainutils
+    - man-db
+    - git
+    - python3-distutils
+    stage:
+    - -usr/share/ufw/messages/.gitignore
